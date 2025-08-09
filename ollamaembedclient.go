@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"context"

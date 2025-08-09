@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"context"
@@ -13,6 +13,20 @@ type OllamaChatClient struct {
 	backendURL   string      // backend URL
 }
 
+// Adapter so ChatOption can modify Ollama chat requests
+type ollamaChatRequestAdapter struct {
+	temperature float64
+	maxTokens   int
+}
+
+func (a *ollamaChatRequestAdapter) SetTemperature(temp float64) {
+	a.temperature = temp
+}
+
+func (a *ollamaChatRequestAdapter) SetMaxTokens(max int) {
+	a.maxTokens = max
+}
+
 var _ LLMChatClient = (*OllamaChatClient)(nil)
 
 func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options ...ChatOption) (Message, error) {
@@ -23,6 +37,29 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 			Content: msg.Content,
 		})
 	}
+
+	// Default values
+	defaultTemperature := 0.7
+	defaultMaxTokens := 2048 // Default max tokens to generate
+
+	// Create adapter with default values
+	adapter := &ollamaChatRequestAdapter{
+		temperature: defaultTemperature,
+		maxTokens:   defaultMaxTokens,
+	}
+
+	// Apply ChatOptions using the standard pattern
+	for _, opt := range options {
+		if opt != nil {
+			// First pass: let options observe current values
+			opt.SetTemperature(adapter.temperature)
+			opt.SetMaxTokens(adapter.maxTokens)
+			// Second pass: let options set new values
+			opt.SetTemperature(adapter.temperature)
+			opt.SetMaxTokens(adapter.maxTokens)
+		}
+	}
+
 	think := false
 	stream := false
 	req := &api.ChatRequest{
@@ -30,6 +67,10 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 		Messages: apiMessages,
 		Stream:   &stream,
 		Think:    &think,
+		Options: map[string]any{
+			"temperature": adapter.temperature,
+			"num_predict": adapter.maxTokens,
+		},
 	}
 
 	var finalResponse api.ChatResponse

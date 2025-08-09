@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"bytes"
@@ -21,11 +21,11 @@ type openAIPromptClient struct {
 	openAIClient
 }
 
-func (c *openAIPromptClient) Prompt(ctx context.Context, prompt string) (string, error) {
+func (c *openAIPromptClient) Prompt(ctx context.Context, systemMessage string, temperature float32, prompt string) (string, error) {
 	request := openAIChatRequest{
 		Model:       c.modelName,
-		Messages:    []Message{{Role: "user", Content: prompt}},
-		Temperature: 0.7,
+		Messages:    []Message{{Role: "system", Content: systemMessage}, {Role: "user", Content: prompt}},
+		Temperature: float64(temperature),
 		MaxTokens:   c.maxTokens,
 	}
 
@@ -49,12 +49,34 @@ type openAIChatClient struct {
 	openAIClient
 }
 
-func (c *openAIChatClient) Chat(ctx context.Context, messages []Message, options ...ChatOption) (Message, error) {
+type chatRequestAdapter struct {
+	req *openAIChatRequest
+}
+
+func (a *chatRequestAdapter) SetTemperature(temp float64) {
+	a.req.Temperature = temp
+}
+
+func (a *chatRequestAdapter) SetMaxTokens(max int) {
+	a.req.MaxTokens = max
+}
+
+func (c *openAIChatClient) Chat(ctx context.Context, messages []Message, opts ...ChatOption) (Message, error) {
 	request := openAIChatRequest{
 		Model:       c.modelName,
 		Messages:    messages,
-		Temperature: 0.5,
-		MaxTokens:   c.maxTokens,
+		Temperature: 0.5,         // default
+		MaxTokens:   c.maxTokens, // default
+	}
+
+	// Apply options via adapter
+	adapter := &chatRequestAdapter{req: &request}
+	for _, opt := range opts {
+		if opt != nil {
+			// Option receives current value and can override it
+			opt.SetTemperature(adapter.req.Temperature)
+			opt.SetMaxTokens(adapter.req.MaxTokens)
+		}
 	}
 
 	var response openAIChatResponse
@@ -70,6 +92,7 @@ func (c *openAIChatClient) Chat(ctx context.Context, messages []Message, options
 	if choice.Message.Content == "" {
 		return Message{}, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %s", c.modelName, choice.FinishReason)
 	}
+
 	return choice.Message, nil
 }
 

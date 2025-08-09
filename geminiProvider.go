@@ -1,8 +1,10 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -21,37 +23,102 @@ type GeminiProvider struct {
 	canStream     bool
 }
 
-func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, httpClient *http.Client) *GeminiProvider {
+func NewGeminiProvider(ctx context.Context, apiKey string, modelName string, baseURLs []string, httpClient *http.Client) (*GeminiProvider, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	if len(baseURLs) == 0 {
 		baseURLs = []string{"https://generativelanguage.googleapis.com"}
 	}
-	var canChat, canPrompt, canEmbed, canStream bool
-	contextLength := 32768
-	apiBaseURL := baseURLs[0]
 
-	switch modelName {
-	default:
-		canChat = true
-		canPrompt = true
-		canStream = true
-		contextLength = 32768
-	}
+	apiBaseURL := baseURLs[0]
 	id := fmt.Sprintf("gemini-%s", modelName)
+
+	// Query the API for actual model capabilities
+	modelInfo, err := fetchGeminiModelInfo(ctx, apiBaseURL, apiKey, modelName, httpClient)
+	if err != nil {
+		// Return error rather than silently using wrong capabilities
+		return nil, fmt.Errorf("failed to get model info for %s: %w", modelName, err)
+	}
+
 	return &GeminiProvider{
 		id:            id,
 		apiKey:        apiKey,
-		modelName:     "gemini-2.5-flash", // we always use the same model for now
+		modelName:     modelName,
 		baseURL:       apiBaseURL,
 		httpClient:    httpClient,
-		contextLength: contextLength,
+		contextLength: modelInfo.contextLength,
+		canChat:       modelInfo.canChat,
+		canPrompt:     modelInfo.canPrompt,
+		canEmbed:      modelInfo.canEmbed,
+		canStream:     modelInfo.canStream,
+	}, nil
+}
+
+type modelInfo struct {
+	contextLength int
+	canChat       bool
+	canPrompt     bool
+	canEmbed      bool
+	canStream     bool
+}
+
+func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string, httpClient *http.Client) (*modelInfo, error) {
+	url := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelName)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Goog-Api-Key", apiKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned error (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var modelResponse struct {
+		Name                       string   `json:"name"`
+		InputTokenLimit            int      `json:"inputTokenLimit"`
+		OutputTokenLimit           int      `json:"outputTokenLimit"`
+		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&modelResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Determine capabilities from API response
+	canChat := false
+	canPrompt := false
+	canEmbed := false
+	canStream := false
+
+	for _, method := range modelResponse.SupportedGenerationMethods {
+		switch method {
+		case "generateContent":
+			canChat = true
+			canPrompt = true
+			canStream = true
+		case "embedContent":
+			canEmbed = true
+		}
+	}
+
+	return &modelInfo{
+		contextLength: modelResponse.InputTokenLimit,
 		canChat:       canChat,
 		canPrompt:     canPrompt,
 		canEmbed:      canEmbed,
 		canStream:     canStream,
-	}
+	}, nil
 }
 
 func (p *GeminiProvider) GetBackendIDs() []string {
@@ -241,7 +308,7 @@ type geminiEmbedContentResponse struct {
 // convertToGeminiMessages converts a slice of generic Message types to geminiContent,
 // separating system instructions into a dedicated return value.
 func convertToGeminiMessages(messages []Message) ([]geminiContent, geminiSystemInstruction) {
-	geminiMsgs := make([]geminiContent, 0) // Initialize with 0 length as we might filter out system messages
+	geminiMsgs := make([]geminiContent, 0)
 	systemInstruction := geminiSystemInstruction{
 		Parts: []geminiPart{},
 	}

@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"bytes"
@@ -22,13 +22,13 @@ type VLLMPromptClient struct {
 	vLLMClient
 }
 
-// VLLMChatClient handles chat interactions
+// VLLMChatClient handles chat interaction
 type VLLMChatClient struct {
 	vLLMClient
 }
 
 // NewVLLMPromptClient creates a new prompt client
-func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, httpClient *http.Client, apiKey string) (*VLLMPromptClient, error) {
+func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string) (LLMPromptExecClient, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -42,14 +42,14 @@ func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, httpCli
 		},
 	}
 	client.maxTokens = 2048
-	if _, ok := vllmContextLengths[modelName]; ok {
-		client.maxTokens = min(vllmContextLengths[modelName], client.maxTokens)
+	if contextLength > 0 {
+		client.maxTokens = min(contextLength, client.maxTokens)
 	}
 
 	return client, nil
 }
 
-func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, httpClient *http.Client, apiKey string) (*VLLMChatClient, error) {
+func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string) (LLMChatClient, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -64,26 +64,35 @@ func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, httpClien
 	}
 
 	client.maxTokens = 2048
-	if _, ok := vllmContextLengths[modelName]; ok {
-		client.maxTokens = min(vllmContextLengths[modelName], client.maxTokens)
+	if contextLength > 0 {
+		client.maxTokens = min(contextLength, client.maxTokens)
 	}
 	return client, nil
 }
 
 // Prompt implements LLMPromptExecClient interface
-func (c *VLLMPromptClient) Prompt(ctx context.Context, prompt string) (string, error) {
-	request := completionRequest{
+func (c *vLLMClient) Prompt(ctx context.Context, systeminstruction string, temperature float32, prompt string) (string, error) {
+	// Convert system instruction and prompt to proper message format
+	messages := []Message{
+		{Role: "system", Content: systeminstruction},
+		{Role: "user", Content: prompt},
+	}
+
+	// Create chat request using the same structure as the Chat API
+	request := chatRequest{
 		Model:       c.modelName,
-		Prompt:      prompt,
-		Temperature: 0.5,
+		Messages:    messages,
+		Temperature: float64(temperature),
 		MaxTokens:   c.maxTokens,
 	}
 
-	var response completionResponse
-	if err := c.sendRequest(ctx, "/v1/completions", request, &response); err != nil {
+	// Send request to the chat completions endpoint
+	var response chatResponse
+	if err := c.sendRequest(ctx, "/v1/chat/completions", request, &response); err != nil {
 		return "", err
 	}
 
+	// Handle response
 	if len(response.Choices) == 0 {
 		return "", fmt.Errorf("no completion choices returned from vLLM for model %s", c.modelName)
 	}
@@ -91,14 +100,14 @@ func (c *VLLMPromptClient) Prompt(ctx context.Context, prompt string) (string, e
 	choice := response.Choices[0]
 	switch choice.FinishReason {
 	case "stop":
-		if choice.Text == "" {
+		if choice.Message.Content == "" {
 			return "", fmt.Errorf("empty content from model %s despite normal completion", c.modelName)
 		}
-		return choice.Text, nil
+		return choice.Message.Content, nil
 	case "length":
-		return "", fmt.Errorf("token limit reached for model %s (partial response: %q)", c.modelName, choice.Text)
+		return "", fmt.Errorf("token limit reached for model %s (partial response: %q)", c.modelName, choice.Message.Content)
 	case "content_filter":
-		return "", fmt.Errorf("content filtered for model %s (partial response: %q)", c.modelName, choice.Text)
+		return "", fmt.Errorf("content filtered for model %s (partial response: %q)", c.modelName, choice.Message.Content)
 	default:
 		return "", fmt.Errorf("unexpected completion reason %q for model %s", choice.FinishReason, c.modelName)
 	}
@@ -109,8 +118,21 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []Message, options .
 	request := chatRequest{
 		Model:       c.modelName,
 		Messages:    messages,
-		Temperature: 0.7,
-		MaxTokens:   c.maxTokens,
+		Temperature: 0.7,         // default
+		MaxTokens:   c.maxTokens, // default
+	}
+
+	// Apply ChatOptions via adapter
+	adapter := &vllmChatRequestAdapter{req: &request}
+	for _, opt := range options {
+		if opt != nil {
+			// First: let option observe current values (for relative adjustments)
+			opt.SetTemperature(request.Temperature)
+			opt.SetMaxTokens(request.MaxTokens)
+			// Second: let option set new values (using adapter to modify request)
+			opt.SetTemperature(adapter.req.Temperature)
+			opt.SetMaxTokens(adapter.req.MaxTokens)
+		}
 	}
 
 	var response chatResponse
@@ -148,6 +170,19 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []Message, options .
 			c.modelName,
 		)
 	}
+}
+
+// Adapter so ChatOption can modify vLLM chat requests
+type vllmChatRequestAdapter struct {
+	req *chatRequest
+}
+
+func (a *vllmChatRequestAdapter) SetTemperature(temp float64) {
+	a.req.Temperature = temp
+}
+
+func (a *vllmChatRequestAdapter) SetMaxTokens(max int) {
+	a.req.MaxTokens = max
 }
 
 func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {

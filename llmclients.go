@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import "context"
 
@@ -31,5 +31,5 @@ type LLMStreamClient interface {
 }
 
 type LLMPromptExecClient interface {
-	Prompt(ctx context.Context, prompt string) (string, error)
+	Prompt(ctx context.Context, systeminstruction string, temperature float32, prompt string) (string, error)
 }

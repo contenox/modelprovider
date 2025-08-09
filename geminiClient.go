@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ type geminiPromptClient struct {
 	geminiClient
 }
 
-func (c *geminiPromptClient) Prompt(ctx context.Context, prompt string) (string, error) {
+func (c *geminiPromptClient) Prompt(ctx context.Context, systeminstruction string, temperature float32, prompt string) (string, error) {
 	// Convert the single prompt string into a Gemini-style message array
 	geminiMessages := []geminiContent{
 		{
@@ -32,8 +32,15 @@ func (c *geminiPromptClient) Prompt(ctx context.Context, prompt string) (string,
 
 	request := geminiGenerateContentRequest{
 		Contents: geminiMessages,
+		SystemInstruction: &geminiSystemInstruction{
+			Parts: []geminiPart{
+				geminiPart{
+					Text: systeminstruction,
+				},
+			},
+		},
 		GenerationConfig: &geminiGenerationConfig{
-			Temperature:     0.5,
+			Temperature:     float64(temperature),
 			MaxOutputTokens: c.maxTokens,
 		},
 	}
@@ -70,9 +77,18 @@ func (c *geminiChatClient) Chat(ctx context.Context, messages []Message, options
 		SystemInstruction: &systemInstruction,
 		Contents:          geminiMessages,
 		GenerationConfig: &geminiGenerationConfig{
-			Temperature:     0.7, // Default temperature
-			MaxOutputTokens: c.maxTokens,
+			Temperature:     0.7,         // default
+			MaxOutputTokens: c.maxTokens, // default
 		},
+	}
+
+	// Apply ChatOptions via adapter
+	adapter := &geminiChatRequestAdapter{req: &request}
+	for _, opt := range options {
+		if opt != nil {
+			opt.SetTemperature(adapter.req.GenerationConfig.Temperature)
+			opt.SetMaxTokens(adapter.req.GenerationConfig.MaxOutputTokens)
+		}
 	}
 
 	endpoint := fmt.Sprintf("/v1beta/models/%s:generateContent", c.modelName)
@@ -88,12 +104,28 @@ func (c *geminiChatClient) Chat(ctx context.Context, messages []Message, options
 	candidate := response.Candidates[0]
 	if len(candidate.Content.Parts) == 0 || candidate.Content.Parts[0].Text == "" {
 		if len(candidate.FinishReason) > 0 {
-			return Message{}, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %v", c.modelName, candidate.FinishReason)
+			return Message{}, fmt.Errorf(
+				"empty content from model %s despite normal completion. Finish reason: %v",
+				c.modelName, candidate.FinishReason,
+			)
 		}
 		return Message{}, fmt.Errorf("empty content from model %s", c.modelName)
 	}
 
 	return Message{Role: "assistant", Content: candidate.Content.Parts[0].Text}, nil
+}
+
+// Adapter so ChatOption can modify Gemini requests
+type geminiChatRequestAdapter struct {
+	req *geminiGenerateContentRequest
+}
+
+func (a *geminiChatRequestAdapter) SetTemperature(temp float64) {
+	a.req.GenerationConfig.Temperature = temp
+}
+
+func (a *geminiChatRequestAdapter) SetMaxTokens(max int) {
+	a.req.GenerationConfig.MaxOutputTokens = max
 }
 
 // geminiEmbedClient implements serverops.LLMEmbedClient

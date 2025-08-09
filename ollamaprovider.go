@@ -1,12 +1,10 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"context"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
 
 	"github.com/ollama/ollama/api"
 )
@@ -65,13 +63,11 @@ func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 	u, err := url.Parse(backendID)
 	if err != nil {
-		// Consider logging the error too
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 	httpClient := p.httpClient
 	ollamaAPIClient := api.NewClient(u, httpClient)
 
-	// Create and return the wrapper client
 	chatClient := &OllamaChatClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
@@ -122,292 +118,106 @@ func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID stri
 }
 
 func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID string) (LLMStreamClient, error) {
-	return nil, fmt.Errorf("unimplemented")
+	return nil, fmt.Errorf("streaming not implemented for Ollama provider")
 }
 
-type OllamaOption func(*OllamaProvider)
+// CapabilityConfig holds the required capability information
+type CapabilityConfig struct {
+	ContextLength int
+	CanChat       bool
+	CanEmbed      bool
+	CanStream     bool
+	CanPrompt     bool
+}
 
-func NewOllamaModelProvider(name string, backends []string, httpClient *http.Client, opts ...OllamaOption) Provider {
-	// Define defaults based on model name
-	nameForMatching := name
-	if c := strings.Split(name, ":"); len(c) >= 2 && c[1] == "latest" {
-		nameForMatching = c[0] // llama3:latest
-	}
-	context := modelContextLengths[nameForMatching]
-	canChat := canChat[nameForMatching]
-	canEmbed := canEmbed[nameForMatching]
-	canStream := canStreaming[nameForMatching]
-	canPrompt := canPrompt[nameForMatching]
-
-	p := &OllamaProvider{
+// NewOllamaModelProvider creates a provider with explicit capabilities
+func NewOllamaModelProvider(name string, backends []string, httpClient *http.Client, caps CapabilityConfig) Provider {
+	return &OllamaProvider{
 		Name:           name,
 		ID:             "ollama:" + name,
-		ContextLength:  context,
-		SupportsChat:   canChat,
-		SupportsEmbed:  canEmbed,
-		SupportsStream: canStream,
-		SupportsPrompt: canPrompt,
+		ContextLength:  caps.ContextLength,
+		SupportsChat:   caps.CanChat,
+		SupportsEmbed:  caps.CanEmbed,
+		SupportsStream: caps.CanStream,
+		SupportsPrompt: caps.CanPrompt,
 		Backends:       backends,
 		httpClient:     httpClient,
 	}
-
-	for _, opt := range opts {
-		opt(p)
-	}
-
-	return p
 }
 
+// Predefined capability configurations for common models
 var (
-	modelContextLengths = map[string]int{
-		"smollm2:135m":       100000,
-		"qwen3:4b":           8192,
-		"qwen2.5":            8192,
-		"llama2":             4096,
-		"llama3":             8192,
-		"llama3-70b":         8192,
-		"mistral":            8192,
-		"mixtral":            32768,
-		"phi":                2048,
-		"phi4-mini":          2048,
-		"phi4-mini:3.8b":     2048,
-		"codellama":          16384,
-		"codellama:34b-100k": 100000,
-		"gemma":              8192,
-		"openhermes":         4096,
-		"notux":              4096,
-		"llava":              8192,
-		"deepseek":           8192,
-		"qwen":               8192,
-		"qwen2":              8192,
-		"zephyr":             8192,
-		"neural-chat":        8192,
-		"dolphin-mixtral":    32768,
-		"qwen2.5:0.5b":       4128,
-		"qwen2.5:1.5b":       8192,
-		"qwen2.5:3b":         8192,
-		"paraphrase-multilingual:278m-mpnet-base-v2-fp16": 278,
-		"llama2-uncensored":   4096,
-		"llama2-70b":          4096,
-		"llama2-70b-chat":     4096,
-		"llama3-instruct":     8192,
-		"llama3-70b-instruct": 8192,
-		"vicuna":              4096,  // Based on Llama2
-		"guanaco":             4096,  // Based on Llama2
-		"koala":               4096,  // Based on Llama
-		"wizardlm":            4096,  // Based on Llama
-		"airoboros":           4096,  // Llama-based
-		"open-orca":           8192,  // Based on Llama3
-		"yi":                  32768, // Yi Llama-based large context
+	// Standard chat models
+	ChatModel_8K = CapabilityConfig{
+		ContextLength: 8192,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanStream:     true,
+		CanPrompt:     true,
 	}
 
-	modelContextLengthsFullNames = map[string]int{
-		"smollm2:135m":       1024,
-		"codellama:34b-100k": 100000,
-		"qwen3:4b":           32768,
-		"mixtral-8x7b":       32768,
-		"qwen2.5:3b":         8192,
-		"phi4-mini:3.8b":     2048,
+	ChatModel_32K = CapabilityConfig{
+		ContextLength: 32768,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanStream:     true,
+		CanPrompt:     true,
 	}
 
-	canChat = map[string]bool{
-		"llama2": true, "llama3": true, "mistral": true,
-		"qwen3:4b": true,
-		"mixtral":  true, "phi": true, "phi4-mini": true,
-		"codellama": true, "gemma": true, "openhermes": true, "notux": true,
-		"llava": true, "deepseek": true, "qwen": true,
-		"phi4-mini:3.8b": true,
-		"zephyr":         true, "neural-chat": true, "dolphin-mixtral": true,
-		"smollm2:135m": true, "qwen2.5:1.5b": true, "qwen2": true, "qwen2.5": true, "qwen2.5:3b": true,
+	// Embedding models
+	EmbeddingModel_512 = CapabilityConfig{
+		ContextLength: 512,
+		CanChat:       false,
+		CanEmbed:      true,
+		CanStream:     false,
+		CanPrompt:     false,
 	}
 
-	canEmbed = map[string]bool{
-		"deepseek":              true,
-		"qwen":                  true,
-		"qwen2":                 true,
-		"qwen2.5":               true,
-		"qwen2.5:3b":            true,
-		"all-minilm":            true,
-		"granite-embedding:30m": true,
-		"nomic-embed-text":      true,
-		"paraphrase-multilingual:278m-mpnet-base-v2-fp16": true,
-		"llama3":              true, // TODO Check if that's correct
-		"codellama":           true, // TODO Check if that's correct
-		"gemma":               true, // TODO Check if that's correct
-		"mistral":             true, // TODO Check if that's correct
-		"llama3-instruct":     true, // TODO Check if that's correct
-		"llama3-70b-instruct": true, // TODO Check if that's correct
-		"open-orca":           true, // TODO Check if that's correct
-		"yi":                  true, // TODO Check if that's correct
+	EmbeddingModel_8K = CapabilityConfig{
+		ContextLength: 8192,
+		CanChat:       false,
+		CanEmbed:      true,
+		CanStream:     false,
+		CanPrompt:     false,
 	}
 
-	canPrompt = map[string]bool{
-		"llama2":              true,
-		"llama3":              true,
-		"mistral":             true,
-		"codellama":           true,
-		"gemma":               true,
-		"qwen":                true,
-		"qwen2":               true,
-		"qwen3:4b":            true,
-		"qwen2.5":             true,
-		"qwen2.5:3b":          true,
-		"deepseek":            true,
-		"vicuna":              true,
-		"guanaco":             true,
-		"wizardlm":            true,
-		"phi":                 true,
-		"phi4-mini":           true,
-		"airoboros":           true,
-		"llama2-70b":          true,
-		"llama2-70b-chat":     true,
-		"phi4-mini:3.8b":      true,
-		"llama3-instruct":     true,
-		"llama3-70b-instruct": true,
-		"open-orca":           true,
-		"yi":                  true,
-	}
-
-	canStreaming = map[string]bool{
-		"llama2": true, "llama3": true, "mistral": true,
-		"mixtral": true, "phi": true, "phi4-mini": true,
-		"codellama": true, "gemma": true, "openhermes": true, "notux": true,
-		"llava": true, "deepseek": true, "qwen": true,
-		"zephyr": true, "neural-chat": true, "dolphin-mixtral": true,
-		"smollm2:135m": true, "qwen2.5:1.5b": true, "qwen2": true,
-		"phi4-mini:3.8b":      true,
-		"llama2-uncensored":   true,
-		"llama2-70b":          true,
-		"llama2-70b-chat":     true,
-		"llama3-instruct":     true,
-		"llama3-70b-instruct": true,
-		"vicuna":              true,
-		"guanaco":             true,
-		"koala":               true,
-		"wizardlm":            true,
-		"airoboros":           true,
-		"open-orca":           true,
-		"yi":                  true,
+	// Specialized models
+	ChatEmbedModel_8K = CapabilityConfig{
+		ContextLength: 8192,
+		CanChat:       true,
+		CanEmbed:      true,
+		CanStream:     true,
+		CanPrompt:     true,
 	}
 )
 
-func WithChat(supports bool) OllamaOption {
-	return func(p *OllamaProvider) {
-		p.SupportsChat = supports
-	}
+// Convenience constructors for common model types
+func NewOllamaChatModel(name string, backends []string, httpClient *http.Client, contextLength int) Provider {
+	return NewOllamaModelProvider(name, backends, httpClient, CapabilityConfig{
+		ContextLength: contextLength,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanStream:     true,
+		CanPrompt:     true,
+	})
 }
 
-func WithEmbed(supports bool) OllamaOption {
-	return func(p *OllamaProvider) {
-		p.SupportsEmbed = supports
-	}
+func NewOllamaEmbeddingModel(name string, backends []string, httpClient *http.Client, contextLength int) Provider {
+	return NewOllamaModelProvider(name, backends, httpClient, CapabilityConfig{
+		ContextLength: contextLength,
+		CanChat:       false,
+		CanEmbed:      true,
+		CanStream:     false,
+		CanPrompt:     false,
+	})
 }
 
-func WithPrompt(supports bool) OllamaOption {
-	return func(p *OllamaProvider) {
-		p.SupportsPrompt = supports
-	}
-}
-
-func WithStream(supports bool) OllamaOption {
-	return func(p *OllamaProvider) {
-		p.SupportsStream = supports
-	}
-}
-
-func WithContextLength(length int) OllamaOption {
-	return func(p *OllamaProvider) {
-		p.ContextLength = length
-	}
-}
-
-func WithComputedContextLength(model ListModelResponse) OllamaOption {
-	return func(p *OllamaProvider) {
-		length, err := GetModelsMaxContextLength(model)
-		if err != nil {
-			baseName := parseOllamaModelName(model.Model)
-			length = modelContextLengths[baseName] // fallback
-		}
-		p.ContextLength = length
-	}
-}
-
-// GetModelsMaxContextLength returns the effective max context length with improved handling
-func GetModelsMaxContextLength(model ListModelResponse) (int, error) {
-	fullModelName := model.Model
-
-	// 1. Check full model name override first
-	if ctxLen, ok := modelContextLengthsFullNames[fullModelName]; ok {
-		return ctxLen, nil
-	}
-
-	// 2. Try base model name
-	baseModelName := parseOllamaModelName(fullModelName)
-	baseCtxLen, ok := modelContextLengths[baseModelName]
-	if !ok {
-		return 0, fmt.Errorf("base name '%s' from model '%s'", baseModelName, fullModelName)
-	}
-
-	// 3. Apply smart adjustments based on model metadata
-	adjustedCtxLen := baseCtxLen
-	details := model.Details
-
-	// Handle special cases using model metadata
-	switch {
-	case containsAny(details.Families, []string{"extended-context", "long-context"}):
-		adjustedCtxLen = int(float64(adjustedCtxLen) * 2.0)
-	case details.ParameterSize == "70B" && baseModelName == "llama3":
-		// Llama3 70B uses Grouped Query Attention for better context handling
-		adjustedCtxLen = 8192 // Explicit set as official context window
-	case strings.Contains(details.QuantizationLevel, "4-bit"):
-		// Quantized models might have reduced effective context
-		adjustedCtxLen = int(float64(adjustedCtxLen) * 0.8)
-	}
-
-	// 4. Cap values based on known limits
-	if maxCap, ok := modelContextLengthsFullNames[baseModelName+"-max"]; ok {
-		if adjustedCtxLen > maxCap {
-			adjustedCtxLen = maxCap
-		}
-	}
-
-	return adjustedCtxLen, nil
-}
-
-// Helper function for slice contains check
-func containsAny(slice []string, items []string) bool {
-	for _, s := range slice {
-		for _, item := range items {
-			if strings.EqualFold(s, item) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// parseOllamaModelName extracts the base model name before the first colon
-func parseOllamaModelName(modelName string) string {
-	if parts := strings.SplitN(modelName, ":", 2); len(parts) > 0 {
-		return parts[0]
-	}
-	return modelName
-}
-
-type ListModelResponse struct {
-	Name       string       `json:"name"`
-	Model      string       `json:"model"`
-	ModifiedAt time.Time    `json:"modified_at"`
-	Size       int64        `json:"size"`
-	Digest     string       `json:"digest"`
-	Details    ModelDetails `json:"details"`
-}
-
-type ModelDetails struct {
-	ParentModel       string   `json:"parent_model"`
-	Format            string   `json:"format"`
-	Family            string   `json:"family"`
-	Families          []string `json:"families"`
-	ParameterSize     string   `json:"parameter_size"`
-	QuantizationLevel string   `json:"quantization_level"`
+func NewOllamaChatEmbedModel(name string, backends []string, httpClient *http.Client, contextLength int) Provider {
+	return NewOllamaModelProvider(name, backends, httpClient, CapabilityConfig{
+		ContextLength: contextLength,
+		CanChat:       true,
+		CanEmbed:      true,
+		CanStream:     true,
+		CanPrompt:     true,
+	})
 }

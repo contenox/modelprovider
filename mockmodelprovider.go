@@ -1,4 +1,4 @@
-package libmodelprovider
+package modelprovider
 
 import (
 	"context"
@@ -90,6 +90,6 @@ type MockPromptClient struct {
 	ProviderID string
 }
 
-func (m *MockPromptClient) Prompt(ctx context.Context, prompt string) (string, error) {
+func (m *MockPromptClient) Prompt(ctx context.Context, systeminstruction string, temperature float32, prompt string) (string, error) {
 	return prompt, nil
 }
