@@ -23,7 +23,7 @@ type GeminiProvider struct {
 	canStream     bool
 }
 
-func NewGeminiProvider(ctx context.Context, apiKey string, modelName string, baseURLs []string, httpClient *http.Client) (*GeminiProvider, error) {
+func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap CapabilityConfig, httpClient *http.Client) *GeminiProvider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -34,25 +34,18 @@ func NewGeminiProvider(ctx context.Context, apiKey string, modelName string, bas
 	apiBaseURL := baseURLs[0]
 	id := fmt.Sprintf("gemini-%s", modelName)
 
-	// Query the API for actual model capabilities
-	modelInfo, err := fetchGeminiModelInfo(ctx, apiBaseURL, apiKey, modelName, httpClient)
-	if err != nil {
-		// Return error rather than silently using wrong capabilities
-		return nil, fmt.Errorf("failed to get model info for %s: %w", modelName, err)
-	}
-
 	return &GeminiProvider{
 		id:            id,
 		apiKey:        apiKey,
 		modelName:     modelName,
 		baseURL:       apiBaseURL,
 		httpClient:    httpClient,
-		contextLength: modelInfo.contextLength,
-		canChat:       modelInfo.canChat,
-		canPrompt:     modelInfo.canPrompt,
-		canEmbed:      modelInfo.canEmbed,
-		canStream:     modelInfo.canStream,
-	}, nil
+		contextLength: cap.ContextLength,
+		canChat:       cap.CanChat,
+		canPrompt:     cap.CanPrompt,
+		canEmbed:      cap.CanEmbed,
+		canStream:     cap.CanStream,
+	}
 }
 
 type modelInfo struct {
@@ -122,7 +115,7 @@ func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string
 }
 
 func (p *GeminiProvider) GetBackendIDs() []string {
-	return []string{"default"}
+	return []string{p.baseURL}
 }
 
 func (p *GeminiProvider) ModelName() string {

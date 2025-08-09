@@ -21,7 +21,7 @@ type OpenAIProvider struct {
 	canStream     bool
 }
 
-func NewOpenAIProvider(ctx context.Context, apiKey, modelName string, backendURLs []string, capability CapabilityConfig, httpClient *http.Client) (*OpenAIProvider, error) {
+func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability CapabilityConfig, httpClient *http.Client) *OpenAIProvider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -43,11 +43,11 @@ func NewOpenAIProvider(ctx context.Context, apiKey, modelName string, backendURL
 		canPrompt:     capability.CanPrompt,
 		canEmbed:      capability.CanEmbed,
 		canStream:     capability.CanStream,
-	}, nil
+	}
 }
 
 func (p *OpenAIProvider) GetBackendIDs() []string {
-	return []string{"default"}
+	return []string{p.baseURL}
 }
 
 func (p *OpenAIProvider) ModelName() string {

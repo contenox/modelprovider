@@ -105,34 +105,3 @@ func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string)
 func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string) (LLMStreamClient, error) {
 	return nil, fmt.Errorf("provider %s (model %s) does not support streaming", p.GetID(), p.ModelName())
 }
-
-// Convenience constructors for common model types
-func NewVLLMChatModel(name string, backends []string, client *http.Client, contextLength int, authToken string) Provider {
-	return NewVLLMModelProvider(name, backends, client, CapabilityConfig{
-		ContextLength: contextLength,
-		CanChat:       true,
-		CanEmbed:      false,
-		CanStream:     true,
-		CanPrompt:     true,
-	}, authToken)
-}
-
-func NewVLLMEmbeddingModel(name string, backends []string, client *http.Client, contextLength int, authToken string) Provider {
-	return NewVLLMModelProvider(name, backends, client, CapabilityConfig{
-		ContextLength: contextLength,
-		CanChat:       false,
-		CanEmbed:      true,
-		CanStream:     false,
-		CanPrompt:     false,
-	}, authToken)
-}
-
-func NewVLLMChatEmbedModel(name string, backends []string, client *http.Client, contextLength int, authToken string) Provider {
-	return NewVLLMModelProvider(name, backends, client, CapabilityConfig{
-		ContextLength: contextLength,
-		CanChat:       true,
-		CanEmbed:      true,
-		CanStream:     true,
-		CanPrompt:     true,
-	}, authToken)
-}
