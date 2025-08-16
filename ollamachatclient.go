@@ -60,7 +60,9 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 		}
 	}
 
-	think := false
+	think := api.ThinkValue{
+		Value: false,
+	}
 	stream := false
 	req := &api.ChatRequest{
 		Model:    c.modelName,

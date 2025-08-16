@@ -16,7 +16,9 @@ type OllamaPromptClient struct {
 // Prompt implements serverops.LLMPromptClient.
 func (o *OllamaPromptClient) Prompt(ctx context.Context, systeminstruction string, temperature float32, prompt string) (string, error) {
 	stream := false
-	think := false
+	think := api.ThinkValue{
+		Value: false,
+	}
 	req := &api.GenerateRequest{
 		Model:  o.modelName,
 		Prompt: prompt,
