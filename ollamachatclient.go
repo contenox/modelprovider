@@ -40,12 +40,10 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 
 	// Default values
 	defaultTemperature := 0.7
-	defaultMaxTokens := 2048 // Default max tokens to generate
-
 	// Create adapter with default values
 	adapter := &ollamaChatRequestAdapter{
 		temperature: defaultTemperature,
-		maxTokens:   defaultMaxTokens,
+		maxTokens:   0,
 	}
 
 	// Apply ChatOptions using the standard pattern
@@ -59,6 +57,13 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 			opt.SetMaxTokens(adapter.maxTokens)
 		}
 	}
+	llamaOptions := map[string]any{
+		"temperature": adapter.temperature,
+	}
+
+	if adapter.maxTokens > 0 {
+		llamaOptions["num_predict"] = adapter.maxTokens
+	}
 
 	think := api.ThinkValue{
 		Value: false,
@@ -69,10 +74,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []Message, options
 		Messages: apiMessages,
 		Stream:   &stream,
 		Think:    &think,
-		Options: map[string]any{
-			"temperature": adapter.temperature,
-			"num_predict": adapter.maxTokens,
-		},
+		Options:  llamaOptions,
 	}
 
 	var finalResponse api.ChatResponse

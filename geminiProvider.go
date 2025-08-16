@@ -54,6 +54,7 @@ type modelInfo struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	canThink      bool
 }
 
 func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string, httpClient *http.Client) (*modelInfo, error) {
@@ -149,6 +150,10 @@ func (p *GeminiProvider) CanStream() bool {
 // CanPrompt returns true if the model supports prompting.
 func (p *GeminiProvider) CanPrompt() bool {
 	return p.canPrompt
+}
+
+func (p *GeminiProvider) CanThink() bool {
+	return false
 }
 
 // GetChatConnection returns an LLMChatClient for the specified backend ID.

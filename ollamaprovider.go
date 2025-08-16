@@ -17,6 +17,7 @@ type OllamaProvider struct {
 	SupportsEmbed  bool
 	SupportsStream bool
 	SupportsPrompt bool
+	SupportsThink  bool
 	httpClient     *http.Client
 	Backends       []string
 }
@@ -55,6 +56,10 @@ func (p *OllamaProvider) CanStream() bool {
 
 func (p *OllamaProvider) CanPrompt() bool {
 	return p.SupportsPrompt
+}
+
+func (p *OllamaProvider) CanThink() bool {
+	return p.SupportsThink
 }
 
 func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
@@ -128,6 +133,7 @@ type CapabilityConfig struct {
 	CanEmbed      bool
 	CanStream     bool
 	CanPrompt     bool
+	CanThink      bool
 }
 
 // NewOllamaModelProvider creates a provider with explicit capabilities
@@ -140,6 +146,7 @@ func NewOllamaModelProvider(name string, backends []string, httpClient *http.Cli
 		SupportsEmbed:  caps.CanEmbed,
 		SupportsStream: caps.CanStream,
 		SupportsPrompt: caps.CanPrompt,
+		SupportsThink:  caps.CanThink,
 		Backends:       backends,
 		httpClient:     httpClient,
 	}

@@ -73,6 +73,10 @@ func (p *vLLMProvider) CanPrompt() bool {
 	return p.SupportsPrompt
 }
 
+func (p *vLLMProvider) CanThink() bool {
+	return false
+}
+
 func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
 	if !p.CanChat() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support chat", p.GetID(), p.ModelName())

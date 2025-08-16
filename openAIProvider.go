@@ -82,6 +82,10 @@ func (p *OpenAIProvider) CanPrompt() bool {
 	return p.canPrompt
 }
 
+func (p *OpenAIProvider) CanThink() bool {
+	return false
+}
+
 func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
 	if !p.CanChat() {
 		return nil, fmt.Errorf("model %s does not support chat interactions", p.modelName)

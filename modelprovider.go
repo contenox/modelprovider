@@ -15,6 +15,7 @@ type Provider interface {
 	CanEmbed() bool          // Supports embeddings
 	CanStream() bool         // Supports streaming
 	CanPrompt() bool         // Supports prompting
+	CanThink() bool          // Supports thinking
 	GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error)
 	GetPromptConnection(ctx context.Context, backendID string) (LLMPromptExecClient, error)
 	GetEmbedConnection(ctx context.Context, backendID string) (LLMEmbedClient, error)
